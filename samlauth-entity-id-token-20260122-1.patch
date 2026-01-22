@@ -1,0 +1,26 @@
+diff --git a/src/SamlService.php b/src/SamlService.php
+index 37288fe..1d2dd7d 100644
+--- a/src/SamlService.php
++++ b/src/SamlService.php
+@@ -12,6 +12,8 @@ use Drupal\Core\Session\AnonymousUserSession;
+ use Drupal\Core\StringTranslation\StringTranslationTrait;
+ use Drupal\Core\StringTranslation\TranslationInterface;
+ use Drupal\Core\Url;
++use Drupal\Core\Utility\Token;
++use Drupal\Core\Render\BubbleableMetadata;
+ use Drupal\externalauth\Authmap;
+ use Drupal\externalauth\ExternalAuth;
+ use Drupal\key\KeyRepositoryInterface;
+@@ -1160,6 +1162,12 @@ class SamlService {
+       $library_config['baseurl'] = $base_url;
+     }
+ 
++    //  If Entity ID contains a token, replace it.
++    $token_service = \Drupal::token();
++    $bubbleable_metadata = new BubbleableMetadata();
++    $library_config['sp']['entityId'] = $token_service->replace($library_config['sp']['entityId'], [], [], $bubbleable_metadata);
++
++
+     // We want to read cert/key values from whereever they are stored, only
+     // when we actually need them. This may lead to us creating a custom
+     // \OneLogin\Saml2\Settings child class that contains the logic of 'just in
