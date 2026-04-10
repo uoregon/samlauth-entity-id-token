@@ -1,0 +1,22 @@
+diff --git a/samlauth.module b/samlauth.module
+index b05d45f..34cebf3 100644
+--- a/samlauth.module
++++ b/samlauth.module
+@@ -77,6 +77,17 @@ function samlauth_form_user_form_alter(&$form, FormStateInterface $form_state) {
+   }
+ }
+ 
++function samlauth_user_logout()
++{
++  $saml_controller = \Drupal::service('samlauth.saml');
++  $saml_controller->logout();
++  //$session = \Drupal::service('session_manager');
++  //    var_dump($session);
++  //    var_dump($account);
++  //    die();
++
++}
++
+ /**
+  * Implements hook_form_FORM_ID_alter() for the login form.
+  */
