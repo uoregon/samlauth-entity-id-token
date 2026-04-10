@@ -1,0 +1,184 @@
+diff --git a/config/schema/samlauth.schema.yml b/config/schema/samlauth.schema.yml
+index 10056b9..7d2e110 100644
+--- a/config/schema/samlauth.schema.yml
++++ b/config/schema/samlauth.schema.yml
+@@ -34,6 +34,9 @@ samlauth.authentication:
+     local_login_saml_error:
+       type: boolean
+       label: 'Tell disallowed users they must log in using SAML'
++    logout_drupal_idp:
++      type: boolean
++      label: 'Log out of drupal and Idp on /user/logout'
+     logout_different_user:
+       type: boolean
+       label: 'Log out different user upon re-authentication'
+diff --git a/samlauth.module b/samlauth.module
+index b05d45f..25fecea 100644
+--- a/samlauth.module
++++ b/samlauth.module
+@@ -6,6 +6,8 @@
+  */
+ 
+ use Drupal\Component\Utility\UrlHelper;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\samlauth\SamlService;
+ use Drupal\Core\Cache\CacheableMetadata;
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Routing\RouteMatchInterface;
+@@ -77,6 +79,19 @@ function samlauth_form_user_form_alter(&$form, FormStateInterface $form_state) {
+   }
+ }
+ 
++/**
++ * Implements hook_menu_links_discovered_alter().
++ */
++function samlauth_menu_links_discovered_alter(&$links)
++{
++  if (isset($links['user.logout'])) {
++    // Change the route name to the SAML logout route
++    $links['user.logout']['route_name'] = 'samlauth.saml_controller_logout';
++    // Note: The route name may vary (e.g., 'simplesamlphp_auth.logout') 
++    // depending on your SAML module.
++  }
++}
++
+ /**
+  * Implements hook_form_FORM_ID_alter() for the login form.
+  */
+diff --git a/src/Form/SamlauthConfigureForm.php b/src/Form/SamlauthConfigureForm.php
+index 85d93b8..9ce1844 100644
+--- a/src/Form/SamlauthConfigureForm.php
++++ b/src/Form/SamlauthConfigureForm.php
+@@ -17,7 +17,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
+  * Reads/writes the same config object as SamlauthSamlConfigureForm; the form
+  * is split up because configuration options became unwieldy.
+  */
+-class SamlauthConfigureForm extends ConfigFormBase {
++class SamlauthConfigureForm extends ConfigFormBase
++{
+   use SamlauthConfigureTrait;
+ 
+   const MAX_UNCOLLAPSED_ROLES = 10;
+@@ -46,7 +47,8 @@ class SamlauthConfigureForm extends ConfigFormBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public static function create(ContainerInterface $container) {
++  public static function create(ContainerInterface $container)
++  {
+     $instance = parent::create($container);
+ 
+     $instance->token = $container->get('token');
+@@ -59,21 +61,24 @@ class SamlauthConfigureForm extends ConfigFormBase {
+   /**
+    * {@inheritdoc}
+    */
+-  protected function getEditableConfigNames() {
++  protected function getEditableConfigNames()
++  {
+     return [SamlController::CONFIG_OBJECT_NAME];
+   }
+ 
+   /**
+    * {@inheritdoc}
+    */
+-  public function getFormId() {
++  public function getFormId()
++  {
+     return 'samlauth_configure_form';
+   }
+ 
+   /**
+    * {@inheritdoc}
+    */
+-  public function buildForm(array $form, FormStateInterface $form_state) {
++  public function buildForm(array $form, FormStateInterface $form_state)
++  {
+     // The types and labels of all configuration values are defined in the
+     // schema.yml; we want to get them from there instead of repeating them.
+     // A simple definition array without replacements should suffice for this
+@@ -184,7 +189,7 @@ class SamlauthConfigureForm extends ConfigFormBase {
+       '#type' => 'details',
+       '#open' => TRUE,
+       '#description' => $this->t('If enabled, whenever the unique ID in the SAML assertion is not already associated with a Drupal user but the assertion data can be matched with an existing Drupal user without SAML association, that user will be linked and logged in. Matching is attempted in the order of below enabled checkboxes, until a user is found.')
+-      . '<br><br><em>' . $this->t('Warning: if the data used for matching can be changed by the IdP user, this has security implications; it enables a user to influence which Drupal user they take over.') . '</em>',
++        . '<br><br><em>' . $this->t('Warning: if the data used for matching can be changed by the IdP user, this has security implications; it enables a user to influence which Drupal user they take over.') . '</em>',
+     ];
+ 
+     $this->addElementsFromSchema($form['user_info']['linking'], $schema_definition, $config, [
+@@ -246,8 +251,7 @@ class SamlauthConfigureForm extends ConfigFormBase {
+         ],
+       ];
+       $form['user_info']['linking']['roles']['map_users_roles'] = $element;
+-    }
+-    else {
++    } else {
+       $form['user_info']['linking']['map_users_roles'] = $element;
+     }
+ 
+@@ -316,6 +320,7 @@ class SamlauthConfigureForm extends ConfigFormBase {
+       ],
+       'error_throw' => $this->t("No redirection or meaningful logging is done. This better enables custom code to handle errors."),
+       'login_error_keep_session' => $this->t("When Drupal login fails after successful SAML authentication, the user's state at the IdP is still 'logged in'. This option keeps SAML session data in a Drupal session for the anonymous user, so that a logout request can be started from this site (/saml/logout) successfully afterwards."),
++      'logout_drupal_idp' => $this->t("When current user logs out of drupal, also log out of Idp"),
+       'logout_different_user' => $this->t('If a login (coming from the IdP) happens while another user is still logged into the site, that user is logged out and the new user is logged in. (By default, the old user stays logged in and a warning is displayed. This situation does not apply if the IdP is on another domain and <a href="https://www.drupal.org/node/3275352">cookie_samesite is configured</a> as "Strict" or "Lax", as is standard for new D10.1+ installs, because then the old user is not seen while coming from the IdP, and login happens normally.)'),
+       'bypass_relay_state_check' => $this->t("When enabled, a response's RelayState parameter is redirected to, even if not a known safe hostname. (This will be removed in a newer version of the module.)"),
+     ]);
+@@ -330,7 +335,8 @@ class SamlauthConfigureForm extends ConfigFormBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public function validateForm(array &$form, FormStateInterface $form_state) {
++  public function validateForm(array &$form, FormStateInterface $form_state)
++  {
+     parent::validateForm($form, $form_state);
+     // Validate login/logout redirect URLs.
+     $login_url_path = $form_state->getValue('login_redirect_url');
+@@ -362,7 +368,8 @@ class SamlauthConfigureForm extends ConfigFormBase {
+   /**
+    * {@inheritdoc}
+    */
+-  public function submitForm(array &$form, FormStateInterface $form_state) {
++  public function submitForm(array &$form, FormStateInterface $form_state)
++  {
+     $config = $this->config(SamlController::CONFIG_OBJECT_NAME);
+ 
+     $config_keys_to_save = [
+@@ -385,14 +392,14 @@ class SamlauthConfigureForm extends ConfigFormBase {
+       'error_redirect_url',
+       'error_throw',
+       'login_error_keep_session',
++      'logout_drupal_idp',
+       'logout_different_user',
+       'bypass_relay_state_check',
+     ];
+     // unique_id_source indexes is hardcoded: 0 == nameid.
+     if ($form_state->getValue('unique_id_source')) {
+       $config_keys_to_save[] = 'unique_id_attribute';
+-    }
+-    else {
++    } else {
+       $config->set('unique_id_attribute', SamlService::NAMEID_MOCK_ATTRIBUTE_NAME);
+       // Only save the NameID config values if they are visible.
+       $this->setNameID($form_state, $config);
+@@ -413,5 +420,4 @@ class SamlauthConfigureForm extends ConfigFormBase {
+ 
+     parent::submitForm($form, $form_state);
+   }
+-
+ }
+diff --git a/src/SamlService.php b/src/SamlService.php
+index 97b2e93..4fe1be1 100644
+--- a/src/SamlService.php
++++ b/src/SamlService.php
+@@ -1094,7 +1094,9 @@ class SamlService {
+     $library_config = [
+       'debug' => (bool) $config->get('debug_phpsaml'),
+       'sp' => [
+-        'entityId' => $config->get('sp_entity_id'),
++        // Check if [site:base-url] is in the entityId variable and replaces string with \Drupal::request()->getSchemeAndHttpHost().
++        'entityId' => str_replace("[site:base-url]",
++          \Drupal::request()->getSchemeAndHttpHost(), ($config->get('sp_entity_id') ?? '')),
+         'assertionConsumerService' => [
+           // See ExecuteInRenderContextTrait if curious why the long chained
+           // call is necessary.
