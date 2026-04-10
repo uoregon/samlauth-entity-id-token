@@ -1,0 +1,33 @@
+diff --git a/samlauth.module b/samlauth.module
+index b05d45f..25fecea 100644
+--- a/samlauth.module
++++ b/samlauth.module
+@@ -6,6 +6,8 @@
+  */
+ 
+ use Drupal\Component\Utility\UrlHelper;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\samlauth\SamlService;
+ use Drupal\Core\Cache\CacheableMetadata;
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Routing\RouteMatchInterface;
+@@ -77,6 +79,19 @@ function samlauth_form_user_form_alter(&$form, FormStateInterface $form_state) {
+   }
+ }
+ 
++/**
++ * Implements hook_menu_links_discovered_alter().
++ */
++function samlauth_menu_links_discovered_alter(&$links)
++{
++  if (isset($links['user.logout'])) {
++    // Change the route name to the SAML logout route
++    $links['user.logout']['route_name'] = 'samlauth.saml_controller_logout';
++    // Note: The route name may vary (e.g., 'simplesamlphp_auth.logout') 
++    // depending on your SAML module.
++  }
++}
++
+ /**
+  * Implements hook_form_FORM_ID_alter() for the login form.
+  */
