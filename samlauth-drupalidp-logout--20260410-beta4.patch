@@ -1,0 +1,44 @@
+diff --git a/samlauth.module b/samlauth.module
+index b05d45f..e04308a 100644
+--- a/samlauth.module
++++ b/samlauth.module
+@@ -6,6 +6,8 @@
+  */
+ 
+ use Drupal\Component\Utility\UrlHelper;
++use Drupal\Core\Session\AccountInterface;
++use Drupal\samlauth\SamlService;
+ use Drupal\Core\Cache\CacheableMetadata;
+ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Routing\RouteMatchInterface;
+@@ -77,6 +79,30 @@ function samlauth_form_user_form_alter(&$form, FormStateInterface $form_state) {
+   }
+ }
+ 
++/**
++ * Implements hook_user_logout().
++ */
++function samlauth_user_logout(AccountInterface $account) {
++{
++
++  // Only attempt SAML logout for authenticated users.
++  if ($account->id() === 0) {
++    return;
++  }
++
++  /** @var \Drupal\samlauth\SamlService $saml_service */
++  $saml_service = \Drupal::service('samlauth.saml');
++
++  // Check whether this session was authenticated via SAML.
++  if (!$saml_service->isAuthenticated()) {
++    return;
++  }
++
++  // Initiate IdP Single Logout (SLO).
++  // This will typically redirect the browser to the IdP.
++  $saml_service->logout();
++}
++
+ /**
+  * Implements hook_form_FORM_ID_alter() for the login form.
+  */
