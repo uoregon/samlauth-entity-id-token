@@ -1,0 +1,41 @@
+diff --git a/config/schema/samlauth.schema.yml b/config/schema/samlauth.schema.yml
+index 15f2914..9d8d158 100644
+--- a/config/schema/samlauth.schema.yml
++++ b/config/schema/samlauth.schema.yml
+@@ -36,7 +36,7 @@ samlauth.authentication:
+       label: 'Tell disallowed users they must log in using SAML'
+     logout_drupal_idp:
+       type: boolean
+-      label: 'Log out of drupal and Idp. Sets (/user/logout) route path to (/saml/logout)'
++      label: 'Reroute to SAML IdP logout when visiting /user/logout'
+     logout_different_user:
+       type: boolean
+       label: 'Log out different user upon re-authentication'
+diff --git a/src/Form/SamlauthConfigureForm.php b/src/Form/SamlauthConfigureForm.php
+index e7e5d4e..fbc7a47 100644
+--- a/src/Form/SamlauthConfigureForm.php
++++ b/src/Form/SamlauthConfigureForm.php
+@@ -316,7 +316,7 @@ class SamlauthConfigureForm extends ConfigFormBase {
+       ],
+       'error_throw' => $this->t("No redirection or meaningful logging is done. This better enables custom code to handle errors."),
+       'login_error_keep_session' => $this->t("When Drupal login fails after successful SAML authentication, the user's state at the IdP is still 'logged in'. This option keeps SAML session data in a Drupal session for the anonymous user, so that a logout request can be started from this site (/saml/logout) successfully afterwards."),
+-      'logout_drupal_idp' => $this->t("Re-route current (/user/logout) route to logout through /saml/logout."),
++      'logout_drupal_idp' => $this->t("When enabled, re-route /user/logout route through SAML logout."),
+       'logout_different_user' => $this->t('If a login (coming from the IdP) happens while another user is still logged into the site, that user is logged out and the new user is logged in. (By default, the old user stays logged in and a warning is displayed. This situation does not apply if the IdP is on another domain and <a href="https://www.drupal.org/node/3275352">cookie_samesite is configured</a> as "Strict" or "Lax", as is standard for new D10.1+ installs, because then the old user is not seen while coming from the IdP, and login happens normally.)'),
+       'bypass_relay_state_check' => $this->t("When enabled, a response's RelayState parameter is redirected to, even if not a known safe hostname. (This will be removed in a newer version of the module.)"),
+     ]);
+diff --git a/src/Routing/RerouteUserLogoutSubscriber.php b/src/Routing/RerouteUserLogoutSubscriber.php
+index 63cad12..d1a7c46 100644
+--- a/src/Routing/RerouteUserLogoutSubscriber.php
++++ b/src/Routing/RerouteUserLogoutSubscriber.php
+@@ -29,8 +29,8 @@ class RerouteUserLogoutSubscriber extends RouteSubscriberBase
+         if ($config->get('logout_drupal_idp')) {
+             // Find the core logout route.
+             if ($route = $collection->get('user.logout')) {
+-                // Set path to /saml/logout.
+-                $route->setPath('/saml/logout');
++                // Set route controller of user.logout to samlController::logout.
++                $route->setDefault('_controller', '\Drupal\samlauth\Controller\SamlController::logout');
+             }
+         }
+     }
